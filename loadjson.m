@@ -258,8 +258,9 @@ function [object, pos,index_esc] = parse_array(inputstr, pos, esc, index_esc, va
                 if(varargin{1}.parsestringarray==0)
                     arraystr=regexprep(arraystr,'\"','''');
                 end
-                object=eval(arraystr);
-                if(iscell(object))
+		object=regexp(arraystr,'(^\[\s*")|(",\s*")|("\s*\]$)','split');
+                object=[object(2:end-1)]
+		if(iscell(object))
                     object=cellfun(@unescapejsonstring,object,'UniformOutput',false);
                 end
                 pos=endpos;
