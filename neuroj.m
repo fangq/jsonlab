@@ -95,14 +95,12 @@ if (nargin == 1 && strcmp(cmd, 'gui'))
     handles.hDatabase = uicontrol(handles.pnSearch, 'style', 'popupmenu', 'string', {'any', 'openneuro', 'abide', 'abide2', 'datalad-registry', 'adhd200'}, 'units', 'normalized', 'position', [col1e 0.78 col1ew 0.08]);
     uicontrol(handles.pnSearch, 'style', 'text', 'string', 'Dataset:', 'units', 'normalized', 'position', [col1 0.68 col1w 0.08], 'HorizontalAlignment', 'right');
     handles.hDataset = uicontrol(handles.pnSearch, 'style', 'edit', 'units', 'normalized', 'position', [col1e 0.68 col1ew 0.08]);
-    uicontrol(handles.pnSearch, 'style', 'text', 'string', 'Subject:', 'units', 'normalized', 'position', [col1 0.58 col1w 0.08], 'HorizontalAlignment', 'right');
-    handles.hSubject = uicontrol(handles.pnSearch, 'style', 'edit', 'units', 'normalized', 'position', [col1e 0.58 col1ew 0.08]);
-    uicontrol(handles.pnSearch, 'style', 'text', 'string', 'Gender:', 'units', 'normalized', 'position', [col1 0.48 col1w 0.08], 'HorizontalAlignment', 'right');
-    handles.hGender = uicontrol(handles.pnSearch, 'style', 'popupmenu', 'string', {'any', 'male', 'female', 'unknown'}, 'units', 'normalized', 'position', [col1e 0.48 col1ew 0.08]);
-    uicontrol(handles.pnSearch, 'style', 'text', 'string', 'Modality:', 'units', 'normalized', 'position', [col1 0.38 col1w 0.08], 'HorizontalAlignment', 'right');
-    handles.hModality = uicontrol(handles.pnSearch, 'style', 'popupmenu', 'string', {'any', 'anat', 'func', 'dwi', 'fmap', 'perf', 'meg', 'eeg', 'ieeg', 'beh', 'pet', 'micr', 'nirs', 'motion'}, 'units', 'normalized', 'position', [col1e 0.38 col1ew 0.08]);
-    uicontrol(handles.pnSearch, 'style', 'text', 'string', 'Data type:', 'units', 'normalized', 'position', [col1 0.28 col1w 0.08], 'HorizontalAlignment', 'right');
-    handles.hTypeName = uicontrol(handles.pnSearch, 'style', 'edit', 'units', 'normalized', 'position', [col1e 0.28 col1ew 0.08]);
+    uicontrol(handles.pnSearch, 'style', 'text', 'string', 'Gender:', 'units', 'normalized', 'position', [col1 0.58 col1w 0.08], 'HorizontalAlignment', 'right');
+    handles.hGender = uicontrol(handles.pnSearch, 'style', 'popupmenu', 'string', {'any', 'male', 'female'}, 'units', 'normalized', 'position', [col1e 0.58 col1ew 0.08]);
+    uicontrol(handles.pnSearch, 'style', 'text', 'string', 'Modality:', 'units', 'normalized', 'position', [col1 0.48 col1w 0.08], 'HorizontalAlignment', 'right');
+    handles.hModality = uicontrol(handles.pnSearch, 'style', 'popupmenu', 'string', modalitylist(), 'units', 'normalized', 'position', [col1e 0.48 col1ew 0.08]);
+    uicontrol(handles.pnSearch, 'style', 'text', 'string', 'Data type:', 'units', 'normalized', 'position', [col1 0.38 col1w 0.08], 'HorizontalAlignment', 'right');
+    handles.hTypeName = uicontrol(handles.pnSearch, 'style', 'edit', 'units', 'normalized', 'position', [col1e 0.38 col1ew 0.08]);
 
     % Column 2: Age and counts
     col2 = 0.26;
@@ -147,8 +145,6 @@ if (nargin == 1 && strcmp(cmd, 'gui'))
     handles.hLimit = uicontrol(handles.pnSearch, 'style', 'edit', 'string', '25', 'units', 'normalized', 'position', [col4e 0.88 col4ew 0.08]);
     uicontrol(handles.pnSearch, 'style', 'text', 'string', 'Skip:', 'units', 'normalized', 'position', [col4 0.78 col4w 0.08], 'HorizontalAlignment', 'right');
     handles.hSkip = uicontrol(handles.pnSearch, 'style', 'edit', 'string', '0', 'units', 'normalized', 'position', [col4e 0.78 col4ew 0.08]);
-    handles.hCount = uicontrol(handles.pnSearch, 'style', 'checkbox', 'string', 'Count only', 'units', 'normalized', 'position', [col4 0.68 0.12 0.08]);
-    handles.hUnique = uicontrol(handles.pnSearch, 'style', 'checkbox', 'string', 'Unique only', 'units', 'normalized', 'position', [col4 0.58 0.12 0.08]);
 
     % Buttons
     uicontrol(handles.pnSearch, 'style', 'pushbutton', 'string', 'Search', 'units', 'normalized', 'position', [0.88 0.78 0.10 0.12], 'Callback', @(s, e) dosearch(handles.fmMain));
@@ -2771,7 +2767,10 @@ handles = get(hwin, 'userdata');
 setbusy(hwin, true);
 try
     dbs = neuroj('list');
-    setlist(hwin, handles.lsDb, cellfun(@(x) x.id, dbs.database, 'UniformOutput', false), 'database', 'dbkeys');
+    dbids = cellfun(@(x) x.id, dbs.database, 'UniformOutput', false);
+    setlist(hwin, handles.lsDb, dbids, 'database', 'dbkeys');
+    % offer the same databases in the search panel instead of a stale hard-coded list
+    set(handles.hDatabase, 'string', [{'any'}, dbids(:)'], 'value', 1);
 catch err
     setbusy(hwin, false);
     setstatus(hwin, ['Cannot list databases: ' err.message]);
@@ -2789,7 +2788,7 @@ layoutgui(handles, strcmp(get(handles.pnSearch, 'visible'), 'off'));
 function clearsearch(hwin)
 
 handles = get(hwin, 'userdata');
-editfields = {'hKeyword', 'hDataset', 'hSubject', 'hTypeName', 'hAgeMin', 'hAgeMax', ...
+editfields = {'hKeyword', 'hDataset', 'hTypeName', 'hAgeMin', 'hAgeMax', ...
               'hSessMin', 'hSessMax', 'hTaskMin', 'hTaskMax', 'hRunMin', 'hRunMax', ...
               'hTaskName', 'hSessionName', 'hRunName'};
 for i = 1:length(editfields)
@@ -2800,8 +2799,6 @@ set(handles.hGender, 'value', 1);
 set(handles.hModality, 'value', 1);
 set(handles.hLimit, 'string', '25');
 set(handles.hSkip, 'string', '0');
-set(handles.hCount, 'value', 0);
-set(handles.hUnique, 'value', 0);
 
 % --------------------------------------------------------------------------
 function dosearch(hwin)
@@ -2811,7 +2808,7 @@ baseurl = 'https://neurojson.org/io/search.cgi';
 param = {};
 
 % simple 'field -> query parameter' pairs read from edit boxes
-textfields = {'hKeyword', 'keyword'; 'hDataset', 'dsname'; 'hSubject', 'subname'; ...
+textfields = {'hKeyword', 'keyword'; 'hDataset', 'dsname'; ...
               'hTypeName', 'type'; 'hSessMin', 'sessmin'; 'hSessMax', 'sessmax'; ...
               'hTaskMin', 'taskmin'; 'hTaskMax', 'taskmax'; 'hRunMin', 'runmin'; ...
               'hRunMax', 'runmax'; 'hTaskName', 'task'; 'hSessionName', 'session'; ...
@@ -2840,20 +2837,13 @@ gender = popupvalue(handles.hGender);
 if (~isempty(gender))
     param = [param, 'gender', gender(1)];
 end
-modality = popupvalue(handles.hModality);
+modality = modalitycode(popupvalue(handles.hModality));
 if (~isempty(modality))
     param = [param, 'modality', modality];
 end
 
 param = [param, 'limit', strtrim(get(handles.hLimit, 'string')), ...
          'skip', strtrim(get(handles.hSkip, 'string'))];
-if (get(handles.hCount, 'value'))
-    param = [param, 'count', 'true'];
-end
-if (get(handles.hUnique, 'value'))
-    param = [param, 'unique', 'true'];
-end
-
 setbusy(hwin, true);
 try
     result = webread(baseurl, param{:});
@@ -2864,7 +2854,7 @@ catch err
 end
 
 hits = normalizehits(result);
-if (isempty(hits))
+if (isempty(hits) || issearcherror(result))
     setbusy(hwin, false);
     setstatus(hwin, 'No results found');
     return
@@ -2893,6 +2883,32 @@ setbusy(hwin, false);
 togglesearch(hwin);
 
 % --------------------------------------------------------------------------
+function items = modalitylist()
+% modality vocabulary of the neurojson.io search index, shown with readable
+% labels; modalitycode() turns a label back into the short code that
+% search.cgi matches on (the endpoint rejects the long form)
+
+items = {'any', 'Structural MRI (anat)', 'fMRI (func)', 'DWI (dwi)', ...
+         'Field maps (fmap)', 'Perfusion (perf)', 'MEG (meg)', 'EEG (eeg)', ...
+         'Intracranial EEG (ieeg)', 'Behavioral (beh)', 'PET (pet)', ...
+         'Microscopy (micr)', 'fNIRS (nirs)', 'Motion (motion)', ...
+         'Behavioral data (behavdata)', 'Head position (hpi)', ...
+         'Electrophysiology (ephys)', 'Atlas (atlas)'};
+
+% --------------------------------------------------------------------------
+function code = modalitycode(label)
+% 'fNIRS (nirs)' -> 'nirs'; a bare code is returned unchanged
+
+code = label;
+if (isempty(code))
+    return
+end
+token = regexp(code, '\(([^)]+)\)\s*$', 'tokens', 'once');
+if (~isempty(token))
+    code = token{1};
+end
+
+% --------------------------------------------------------------------------
 function val = popupvalue(hpopup)
 % selected popupmenu entry, or '' when it is left at the leading 'any'
 
@@ -2904,6 +2920,18 @@ if (isempty(items) || idx < 1 || idx > length(items))
 end
 if (~strcmp(items{idx}, 'any'))
     val = items{idx};
+end
+
+% --------------------------------------------------------------------------
+function tf = issearcherror(result)
+% a query that matches nothing comes back as {"status":"error","msg":"empty
+% output"} rather than as an empty array, so it must not be counted as a hit
+
+tf = false;
+if (ischar(result) || isa(result, 'string'))
+    tf = ~isempty(regexp(char(result), '"status"\s*:\s*"error"', 'once'));
+elseif (isstruct(result) && numel(result) == 1)
+    tf = isfield(result, 'status') && ischar(result.status) && strcmp(result.status, 'error');
 end
 
 % --------------------------------------------------------------------------
