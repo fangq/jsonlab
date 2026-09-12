@@ -198,6 +198,15 @@ if (nargin == 1 && strcmp(cmd, 'gui'))
 
     handles = buildmenus(handles);
 
+    % centred overlay shown while a blocking operation runs; a panel inside the
+    % figure rather than a separate window, so it is guaranteed to paint and is
+    % destroyed together with the browser
+    handles.pnBusy = uipanel(handles.fmMain, 'units', 'normalized', 'position', [0.30 0.44 0.40 0.12], ...
+                             'visible', 'off', 'backgroundcolor', [1 0.95 0.75]);
+    handles.txBusy = uicontrol(handles.pnBusy, 'style', 'text', 'units', 'normalized', ...
+                               'position', [0.04 0.1 0.92 0.8], 'backgroundcolor', [1 0.95 0.75], ...
+                               'fontweight', 'bold', 'HorizontalAlignment', 'center', 'string', '');
+
     set(handles.fmMain, 'userdata', handles);
     set(handles.fmMain, 'WindowButtonDownFcn', @(src, events) splitterdown(handles.fmMain));
     set(handles.fmMain, 'WindowButtonUpFcn', @(src, events) splitterup(handles.fmMain));
@@ -962,19 +971,72 @@ if (~isempty(h) && ishandle(h))
 end
 
 % --------------------------------------------------------------------------
-function setbusy(hwin, isbusy)
-% show progress by switching the figure pointer - unlike the previously used
-% hidden msgbox, this is destroyed together with the browser window
+function setbusy(hwin, state)
+% make a blocking operation visible: grey out the lists and tools so a second
+% one cannot be started, show a centred message panel and a watch pointer.
+%
+% state is false to clear, true for a generic wait, or a message string.
+% MATLAB and Octave both run callbacks on the main thread, so a blocking call
+% cannot animate itself - the indicator is painted before the call starts and
+% callers advance it between steps with setbusy(hwin, 'next phase...').
 
 if (~ishandle(hwin))
     return
 end
-if (isbusy)
+handles = get(hwin, 'userdata');
+if (~isstruct(handles) || ~isfield(handles, 'pnBusy'))
+    return
+end
+
+busy = ~(isequal(state, false) || isequal(state, 0));
+lists = [handles.lsDb, handles.lsDs, handles.lsJSON, handles.lsPeek];
+
+if (busy)
+    message = 'Working...';
+    if (ischar(state) && ~isempty(state))
+        message = state;
+    end
+    set(handles.txBusy, 'string', [spinchar(hwin) '  ' message]);
+    set(handles.pnBusy, 'visible', 'on');
+    set(handles.txStatus, 'string', message, 'backgroundcolor', [1 0.95 0.75], 'fontweight', 'bold');
     set(hwin, 'pointer', 'watch');
+    set(lists, 'enable', 'off');
+    settoolenable(handles, false);
 else
+    set(handles.pnBusy, 'visible', 'off');
+    set(handles.txStatus, 'backgroundcolor', get(hwin, 'color'), 'fontweight', 'normal');
     set(hwin, 'pointer', 'arrow');
+    set(lists, 'enable', 'on');
+    updateactions(hwin);
 end
 drawnow;
+
+% --------------------------------------------------------------------------
+function ch = spinchar(hwin)
+% advance a one-character spinner; it turns whenever a caller reports a new
+% phase, which is the only motion achievable while the main thread is blocked
+
+frames = '|/-\';
+idx = getappdata(hwin, 'spinstep');
+if (isempty(idx))
+    idx = 0;
+end
+idx = mod(idx, length(frames)) + 1;
+setappdata(hwin, 'spinstep', idx);
+ch = frames(idx);
+
+% --------------------------------------------------------------------------
+function settoolenable(handles, tf)
+% toggle every toolbar button and context-menu entry at once; the contextual
+% per-item state is restored afterwards by updateactions()
+
+names = {'btDownload', 'btPreview', 'btSaveAs', 'btSubtree', 'btAttach', ...
+         'miDownload', 'miPreview', 'miSaveAs', 'miSubtree', 'miAttach'};
+for i = 1:length(names)
+    if (isfield(handles, names{i}))
+        setenable(handles.(names{i}), tf);
+    end
+end
 
 % --------------------------------------------------------------------------
 function tf = isactivated(handles, event)
@@ -1830,7 +1892,7 @@ if (activated)
     peekkeys = getappdata(hwin, 'peekkeys');
     idx = get(handles.lsPeek, 'value');
     if (node.ok && ~isempty(peekkeys) && idx(1) >= 1 && idx(1) <= length(peekkeys))
-        setbusy(hwin, true);
+        setbusy(hwin, 'Opening...');
         try
             descendinto(hwin, node.key);
             selectkey(hwin, peekkeys{idx(1)});
@@ -2088,7 +2150,7 @@ if (~node.ok || ~node.meta.candownload)
     return
 end
 
-setbusy(hwin, true);
+setbusy(hwin, sprintf('Downloading %s...', node.label));
 cachedfile = '';
 try
     [~, cachedfile] = jdlink(node.meta.url);
@@ -2115,7 +2177,7 @@ if (~node.ok || ~node.meta.canpreview)
     return
 end
 
-setbusy(hwin, true);
+setbusy(hwin, sprintf('Decoding %s for preview...', node.label));
 try
     data = resolvenode(node);
 catch err
@@ -2123,6 +2185,7 @@ catch err
     errordlg(['Cannot decode the selected data: ' err.message], 'Preview');
     return
 end
+setbusy(hwin, 'Rendering preview...');
 setbusy(hwin, false);
 try
     previewdata(data, node.label);
@@ -2156,7 +2219,7 @@ if (isequal(fname, 0) || isequal(fpath, 0))
 end
 target = fullfile(fpath, fname);
 
-setbusy(hwin, true);
+setbusy(hwin, sprintf('Saving %s...', fname));
 try
     if (strcmp(node.meta.kind, 'datalink') && ~isempty(node.meta.cachefile))
         copyfile(node.meta.cachefile, target);
@@ -2237,7 +2300,7 @@ if (isempty(data))
     return
 end
 
-setbusy(hwin, true);
+setbusy(hwin, sprintf('Scanning "%s" for linked files...', label));
 links = subtreelinks(data);
 setbusy(hwin, false);
 if (isempty(links))
@@ -2354,7 +2417,7 @@ if (isequal(fname, 0) || isequal(fpath, 0))
 end
 target = fullfile(fpath, fname);
 
-setbusy(hwin, true);
+setbusy(hwin, sprintf('Exporting subtree to %s...', fname));
 try
     writesubtree(data, target);
 catch err
@@ -2745,7 +2808,7 @@ if (isempty(dsname))
     return
 end
 
-setbusy(hwin, true);
+setbusy(hwin, sprintf('Exporting %s/%s to a folder...', dbname, dsname));
 try
     res = neuroj('export', dbname, dsname);
 catch err
@@ -2764,7 +2827,7 @@ end
 function loaddb(src, event, hwin)
 
 handles = get(hwin, 'userdata');
-setbusy(hwin, true);
+setbusy(hwin, 'Listing databases on neurojson.io...');
 try
     dbs = neuroj('list');
     dbids = cellfun(@(x) x.id, dbs.database, 'UniformOutput', false);
@@ -2844,7 +2907,7 @@ end
 
 param = [param, 'limit', strtrim(get(handles.hLimit, 'string')), ...
          'skip', strtrim(get(handles.hSkip, 'string'))];
-setbusy(hwin, true);
+setbusy(hwin, 'Searching neurojson.io...');
 try
     result = webread(baseurl, param{:});
 catch err
@@ -3018,7 +3081,7 @@ function loadds(src, event, hwin)
 handles = get(hwin, 'userdata');
 if (isactivated(handles, event))
     dbname = selecteditem(hwin, handles.lsDb, 'dbkeys');
-    setbusy(hwin, true);
+    setbusy(hwin, sprintf('Listing datasets in %s...', dbname));
     try
         searchdatasets = getappdata(hwin, 'searchDatasets');
         if (~isempty(searchdatasets) && isa(searchdatasets, 'containers.Map') && isKey(searchdatasets, dbname))
@@ -3052,7 +3115,7 @@ if (isactivated(handles, event))
         setstatus(hwin, 'Please select a database and a dataset first');
         return
     end
-    setbusy(hwin, true);
+    setbusy(hwin, sprintf('Loading %s/%s...', dbname, dsname));
     try
         % a search result lists the matching subjects instead of the document tree
         searchsubjects = getappdata(hwin, 'searchSubjects');
@@ -3087,9 +3150,10 @@ function loaddataset(hwin, dbid, dsname)
 % load a document without decoding JData constructs, so the browser can show
 % the _DataLink_/_ArrayType_ metadata and decode only what the user asks for
 
-handles = get(hwin, 'userdata');
+setbusy(hwin, sprintf('Downloading %s/%s...', dbid, dsname));
 data = neuroj('get', dbid, dsname, '', 'jdatadecode', 0);
 
+setbusy(hwin, sprintf('Building the tree for %s...', dsname));
 setappdata(hwin, 'rootdata', data);
 setappdata(hwin, 'pathstack', {});
 setappdata(hwin, 'dbname', dbid);
@@ -3110,7 +3174,7 @@ if (~isempty(getappdata(hwin, 'rootdata')))
     if (~activated)
         shownodeinfo(hwin);
     else
-        setbusy(hwin, true);
+        setbusy(hwin, 'Opening...');
         try
             stepintonode(hwin);
         catch err
@@ -3119,7 +3183,7 @@ if (~isempty(getappdata(hwin, 'rootdata')))
         setbusy(hwin, false);
     end
 elseif (activated && ~isempty(getappdata(hwin, 'subjectrows')))
-    setbusy(hwin, true);
+    setbusy(hwin, 'Loading the dataset for this subject...');
     try
         opensubject(hwin);
     catch err
